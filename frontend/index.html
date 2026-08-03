@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Field Itinerary — trip planner</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EEF1EA;
+    --paper:#FFFFFF;
+    --ink:#1B2B28;
+    --ink-soft:#4B5A55;
+    --line:#D7D8C9;
+    --accent:#2F6F5E;
+    --accent-soft:#E4ECE6;
+    --gold:#B8862B;
+    --gold-soft:#F2E7D0;
+    --alert:#B3453A;
+    --alert-soft:#F5E1DE;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',sans-serif;line-height:1.55;}
+  .wrap{max-width:1040px;margin:0 auto;padding:32px 24px 80px;}
+  h1,h2,h3{font-family:'Fraunces',serif;font-weight:500;margin:0;}
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+  .brand span{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--ink-soft);text-transform:uppercase;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .who{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:12px;}
+  .who button{padding:6px 12px;font-size:11px;}
+  h1{font-size:34px;margin-bottom:6px;}
+  .tagline{color:var(--ink-soft);font-size:15px;margin-bottom:36px;}
+
+  .doc{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:28px 28px 24px;margin-bottom:28px;}
+  .doc-label{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:18px;}
+
+  .tabs{display:flex;gap:18px;margin-bottom:20px;}
+  .tab{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);cursor:pointer;padding-bottom:6px;border-bottom:2px solid transparent;}
+  .tab.active{color:var(--ink);border-bottom-color:var(--gold);}
+
+  form{display:grid;grid-template-columns:1.4fr 0.8fr 0.8fr 0.8fr;gap:20px;}
+  @media(max-width:760px){form{grid-template-columns:1fr 1fr;}}
+  .field{display:flex;flex-direction:column;gap:6px;border-bottom:1px dashed var(--line);padding-bottom:10px;}
+  .field.wide{grid-column:1/-1;}
+  .field.half{grid-column:span 2;}
+  @media(max-width:760px){.field.half{grid-column:span 1;}}
+  label{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);}
+  input{border:none;background:transparent;font-family:'IBM Plex Sans',sans-serif;font-size:16px;color:var(--ink);padding:2px 0;outline:none;}
+  input::placeholder{color:#9AA39D;}
+  .field:focus-within{border-bottom-color:var(--accent);}
+
+  .submit-row{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;margin-top:6px;}
+  .error{color:var(--alert);font-size:13px;font-family:'IBM Plex Mono',monospace;}
+  .hint{color:var(--ink-soft);font-size:13px;font-family:'IBM Plex Mono',monospace;}
+  button{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.08em;text-transform:uppercase;background:var(--ink);color:var(--bg);border:none;padding:13px 24px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px;}
+  button:hover{background:var(--accent);}
+  button:disabled{opacity:.5;cursor:default;}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);}
+
+  .auth-form{display:none;flex-direction:column;gap:16px;max-width:360px;}
+  .auth-form.show{display:flex;}
+  .auth-field{display:flex;flex-direction:column;gap:6px;border-bottom:1px dashed var(--line);padding-bottom:10px;}
+
+  #app-section{display:none;}
+  #app-section.show{display:block;}
+
+  .ledger{display:none;}
+  .ledger.show{display:block;}
+  .ledger-row{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--line);}
+  .ledger-row:last-child{border-bottom:none;}
+  .stamp{width:28px;height:28px;border-radius:50%;flex-shrink:0;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);transition:all .3s ease;}
+  .stamp.active{border-color:var(--gold);background:var(--gold-soft);color:var(--gold);animation:pulse 1.4s ease-in-out infinite;}
+  .stamp.done{border-color:var(--accent);background:var(--accent);color:#fff;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.5;}}
+  .ledger-name{font-size:15px;flex:1;}
+  .ledger-status{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em;}
+
+  .results{display:none;}
+  .results.show{display:grid;grid-template-columns:1.5fr 1fr;gap:24px;align-items:start;}
+  @media(max-width:820px){.results.show{grid-template-columns:1fr;}}
+
+  .day-card{margin-bottom:16px;}
+  .day-card h3{font-size:19px;margin-bottom:10px;}
+  .day-card ul{margin:0;padding-left:18px;color:var(--ink-soft);}
+  .day-card li{margin-bottom:5px;font-size:14.5px;}
+
+  .side .doc{padding:20px 20px 18px;}
+  #map{height:220px;border-radius:10px;margin-top:4px;}
+
+  .transport-row{display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:12.5px;gap:12px;}
+  .transport-row:last-child{border-bottom:none;}
+  .transport-row .mode{color:var(--ink);text-transform:uppercase;letter-spacing:.04em;flex-shrink:0;}
+  .transport-row .detail{color:var(--ink-soft);text-align:right;}
+  #transport-recommended{margin-top:12px;color:var(--ink-soft);font-size:13px;}
+
+  .budget-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;font-size:13px;}
+  .budget-row .label{width:76px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.05em;flex-shrink:0;}
+  .budget-row .bar-track{flex:1;height:8px;background:var(--accent-soft);border-radius:4px;overflow:hidden;}
+  .budget-row .bar-fill{height:100%;background:var(--accent);border-radius:4px;}
+  .budget-row .amount{width:76px;text-align:right;flex-shrink:0;}
+  .budget-total{display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:14px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);}
+  .budget-tag{display:inline-block;margin-top:10px;padding:4px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.06em;}
+  .budget-tag.ok{background:var(--accent-soft);color:var(--accent);}
+  .budget-tag.over{background:var(--alert-soft);color:var(--alert);}
+
+  .tips{margin:0;padding-left:16px;}
+  .tips li{font-size:13.5px;color:var(--ink-soft);margin-bottom:6px;}
+
+  .history-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--line);cursor:pointer;}
+  .history-row:last-child{border-bottom:none;}
+  .history-row:hover{background:var(--accent-soft);margin:0 -8px;padding:11px 8px;border-radius:6px;}
+  .history-route{font-size:14.5px;}
+  .history-meta{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;margin-top:2px;}
+  .history-status{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;padding:3px 9px;border-radius:5px;flex-shrink:0;}
+  .history-status.succeeded{background:var(--accent-soft);color:var(--accent);}
+  .history-status.failed{background:var(--alert-soft);color:var(--alert);}
+  .history-status.running{background:var(--gold-soft);color:var(--gold);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 22 22">
+        <circle cx="11" cy="11" r="9.5" fill="none" stroke="#2F6F5E" stroke-width="1.2"/>
+        <polygon points="11,3 12.84,9.16 19,11 12.84,12.84 11,19 9.16,12.84 3,11 9.16,9.16" fill="#B8862B"/>
+        <circle cx="11" cy="11" r="1.3" fill="#1B2B28"/>
+      </svg>
+      <span>Field Itinerary</span>
+    </div>
+    <div class="who" id="who" style="display:none;">
+      <span id="who-email"></span>
+      <button class="ghost" id="logout-btn">Log out</button>
+    </div>
+  </div>
+  <h1>Plan a trip with five agents</h1>
+  <p class="tagline">A planner, a budget checker, a local-info scout, a transport scout and a writer plan your trip together — costs in ₹.</p>
+
+  <div class="doc" id="auth-card">
+    <div class="tabs">
+      <div class="tab active" data-tab="signin">Sign in</div>
+      <div class="tab" data-tab="signup">Sign up</div>
+    </div>
+
+    <form class="auth-form show" id="signin-form">
+      <div class="auth-field">
+        <label>Email</label>
+        <input type="email" id="signin-email" required>
+      </div>
+      <div class="auth-field">
+        <label>Password</label>
+        <input type="password" id="signin-password" required>
+      </div>
+      <span class="error" id="signin-error"></span>
+      <button type="submit">Sign in</button>
+    </form>
+
+    <form class="auth-form" id="signup-form">
+      <div class="auth-field">
+        <label>Email</label>
+        <input type="email" id="signup-email" required>
+      </div>
+      <div class="auth-field">
+        <label>Password (min 8 characters)</label>
+        <input type="password" id="signup-password" required minlength="8">
+      </div>
+      <span class="error" id="signup-error"></span>
+      <button type="submit">Create account</button>
+    </form>
+
+    <form class="auth-form" id="confirm-form">
+      <span class="hint">We emailed a confirmation code to your address.</span>
+      <div class="auth-field">
+        <label>Confirmation code</label>
+        <input type="text" id="confirm-code" required>
+      </div>
+      <span class="error" id="confirm-error"></span>
+      <button type="submit">Confirm account</button>
+    </form>
+  </div>
+
+  <div id="app-section">
+    <div class="doc" id="history-card">
+      <div class="doc-label">My trips</div>
+      <div id="history-rows"><span class="hint">No trips yet — plan one below.</span></div>
+    </div>
+
+    <div class="doc">
+      <div class="doc-label">Trip request</div>
+      <form id="trip-form">
+        <div class="field half">
+          <label for="origin">Traveling from</label>
+          <input id="origin" placeholder="Mumbai, Maharashtra" required>
+        </div>
+        <div class="field half">
+          <label for="destination">Destination</label>
+          <input id="destination" placeholder="Jaipur, Rajasthan" required>
+        </div>
+        <div class="field">
+          <label for="start">Start date</label>
+          <input id="start" type="date" required>
+        </div>
+        <div class="field">
+          <label for="end">End date</label>
+          <input id="end" type="date" required>
+        </div>
+        <div class="field">
+          <label for="budget">Budget (₹)</label>
+          <input id="budget" type="number" placeholder="15000">
+        </div>
+        <div class="field wide">
+          <label for="interests">Interests (comma separated)</label>
+          <input id="interests" placeholder="food, heritage, hiking">
+        </div>
+        <div class="submit-row">
+          <span class="error" id="trip-error"></span>
+          <button type="submit" id="submit-btn">
+            <svg width="14" height="14" viewBox="0 0 22 22"><path d="M11 4 L13 11 L11 18 L9 11 Z" fill="currentColor"/></svg>
+            Plan the trip
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="doc ledger" id="ledger">
+      <div class="doc-label">Agent ledger</div>
+      <div class="ledger-row" data-agent="planner">
+        <div class="stamp">1</div>
+        <div class="ledger-name">Planner agent — drafts the rough route</div>
+        <div class="ledger-status">Waiting</div>
+      </div>
+      <div class="ledger-row" data-agent="budget">
+        <div class="stamp">2</div>
+        <div class="ledger-name">Budget checker — estimates costs</div>
+        <div class="ledger-status">Waiting</div>
+      </div>
+      <div class="ledger-row" data-agent="localInfo">
+        <div class="stamp">2</div>
+        <div class="ledger-name">Local info agent — weather &amp; attractions</div>
+        <div class="ledger-status">Waiting</div>
+      </div>
+      <div class="ledger-row" data-agent="transport">
+        <div class="stamp">2</div>
+        <div class="ledger-name">Transport agent — flight, train &amp; bus options</div>
+        <div class="ledger-status">Waiting</div>
+      </div>
+      <div class="ledger-row" data-agent="writer">
+        <div class="stamp">3</div>
+        <div class="ledger-name">Itinerary writer — combines everything</div>
+        <div class="ledger-status">Waiting</div>
+      </div>
+    </div>
+
+    <div class="results" id="results">
+      <div class="days" id="days"></div>
+      <div class="side">
+        <div class="doc" id="map-card" style="display:none;">
+          <div class="doc-label">Route</div>
+          <div id="map"></div>
+        </div>
+        <div class="doc" id="transport-card" style="display:none;">
+          <div class="doc-label">Getting there</div>
+          <div id="transport-rows"></div>
+          <p id="transport-recommended"></p>
+        </div>
+        <div class="doc" id="budget-card">
+          <div class="doc-label">Budget ledger</div>
+          <div id="budget-rows"></div>
+          <div class="budget-total"><span>Estimated total</span><span id="budget-total-amt"></span></div>
+          <span class="budget-tag" id="budget-tag"></span>
+        </div>
+        <div class="doc" id="tips-card">
+          <div class="doc-label">Local tips</div>
+          <ul class="tips" id="tips-list"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/amazon-cognito-identity-js@6/dist/amazon-cognito-identity.min.js"></script>
+<script>
+const API_BASE = "https://ene87rzhs9.execute-api.us-east-1.amazonaws.com";
+const USER_POOL_ID = "us-east-1_WcZWRSH3a";
+const CLIENT_ID = "5edhkdphi0j2q581497h04g3fg";
+
+const userPool = new AmazonCognitoIdentity.CognitoUserPool({
+  UserPoolId: USER_POOL_ID,
+  ClientId: CLIENT_ID,
+});
+
+let idToken = localStorage.getItem("idToken");
+let pendingUser = null;
+let pollTimer = null;
+
+function showApp(email) {
+  document.getElementById("auth-card").style.display = "none";
+  document.getElementById("app-section").classList.add("show");
+  document.getElementById("who").style.display = "flex";
+  document.getElementById("who-email").textContent = email || "";
+  loadHistory();
+}
+
+function showAuth() {
+  document.getElementById("auth-card").style.display = "block";
+  document.getElementById("app-section").classList.remove("show");
+  document.getElementById("who").style.display = "none";
+}
+
+function decodeJwt(token) {
+  const payload = token.split(".")[1];
+  return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+}
+
+if (idToken) {
+  const claims = decodeJwt(idToken);
+  if (claims.exp * 1000 > Date.now()) {
+    showApp(claims.email);
+  } else {
+    localStorage.removeItem("idToken");
+    idToken = null;
+  }
+}
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    const target = tab.dataset.tab;
+    document.getElementById("signin-form").classList.toggle("show", target === "signin");
+    document.getElementById("signup-form").classList.toggle("show", target === "signup");
+    document.getElementById("confirm-form").classList.remove("show");
+  });
+});
+
+document.getElementById("signup-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const email = document.getElementById("signup-email").value.trim();
+  const password = document.getElementById("signup-password").value;
+  const errorEl = document.getElementById("signup-error");
+  errorEl.textContent = "";
+
+  userPool.signUp(email, password, [
+    new AmazonCognitoIdentity.CognitoUserAttribute({ Name: "email", Value: email }),
+  ], null, (err, result) => {
+    if (err) {
+      errorEl.textContent = err.message;
+      return;
+    }
+    pendingUser = result.user;
+    document.getElementById("signup-form").classList.remove("show");
+    document.getElementById("confirm-form").classList.add("show");
+  });
+});
+
+document.getElementById("confirm-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const code = document.getElementById("confirm-code").value.trim();
+  const errorEl = document.getElementById("confirm-error");
+  errorEl.textContent = "";
+
+  pendingUser.confirmRegistration(code, true, (err) => {
+    if (err) {
+      errorEl.textContent = err.message;
+      return;
+    }
+    document.getElementById("confirm-form").classList.remove("show");
+    document.querySelector('.tab[data-tab="signin"]').click();
+  });
+});
+
+document.getElementById("signin-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const email = document.getElementById("signin-email").value.trim();
+  const password = document.getElementById("signin-password").value;
+  const errorEl = document.getElementById("signin-error");
+  errorEl.textContent = "";
+
+  const user = new AmazonCognitoIdentity.CognitoUser({ Username: email, Pool: userPool });
+  const authDetails = new AmazonCognitoIdentity.AuthenticationDetails({
+    Username: email,
+    Password: password,
+  });
+
+  user.authenticateUser(authDetails, {
+    onSuccess: (session) => {
+      idToken = session.getIdToken().getJwtToken();
+      localStorage.setItem("idToken", idToken);
+      showApp(email);
+    },
+    onFailure: (err) => {
+      errorEl.textContent = err.message;
+    },
+  });
+});
+
+document.getElementById("logout-btn").addEventListener("click", () => {
+  localStorage.removeItem("idToken");
+  idToken = null;
+  showAuth();
+});
+
+async function loadHistory() {
+  const container = document.getElementById("history-rows");
+  try {
+    const res = await fetch(`${API_BASE}/trips`, {
+      headers: { "Authorization": `Bearer ${idToken}` },
+    });
+    const data = await res.json();
+    const trips = data.trips || [];
+
+    if (!trips.length) {
+      container.innerHTML = `<span class="hint">No trips yet — plan one below.</span>`;
+      return;
+    }
+
+    container.innerHTML = trips.map(t => `
+      <div class="history-row" data-trip-id="${t.tripId}">
+        <div>
+          <div class="history-route">${t.origin || ""} → ${t.destination || ""}</div>
+          <div class="history-meta">${t.startDate || ""} – ${t.endDate || ""}</div>
+        </div>
+        <span class="history-status ${(t.status || "").toLowerCase()}">${t.status || ""}</span>
+      </div>
+    `).join("");
+
+    container.querySelectorAll(".history-row").forEach(row => {
+      row.addEventListener("click", () => loadPastTrip(row.dataset.tripId));
+    });
+  } catch (err) {
+    container.innerHTML = `<span class="hint">Couldn't load trip history.</span>`;
+  }
+}
+
+async function loadPastTrip(tripId) {
+  const res = await fetch(`${API_BASE}/trip/${tripId}`, {
+    headers: { "Authorization": `Bearer ${idToken}` },
+  });
+  const data = await res.json();
+  if (data.status === "SUCCEEDED" && data.result) {
+    document.getElementById("ledger").classList.remove("show");
+    renderResult(data.result);
+    document.getElementById("results").scrollIntoView({ behavior: "smooth" });
+  }
+}
+
+function setLedgerState(step, status) {
+  const rows = document.querySelectorAll(".ledger-row");
+  const order = ["planner", "budget", "localInfo", "transport", "writer"];
+  const activeIndex = order.indexOf(step);
+
+  rows.forEach(row => {
+    const agent = row.dataset.agent;
+    const idx = order.indexOf(agent);
+    const stamp = row.querySelector(".stamp");
+    const statusEl = row.querySelector(".ledger-status");
+    stamp.classList.remove("active", "done");
+
+    if (status === "SUCCEEDED" || (activeIndex >= 0 && idx < activeIndex)) {
+      stamp.classList.add("done");
+      stamp.textContent = "✓";
+      statusEl.textContent = "Done";
+    } else if (activeIndex >= 0 && idx === activeIndex) {
+      stamp.classList.add("active");
+      statusEl.textContent = "Working";
+    } else {
+      statusEl.textContent = "Waiting";
+    }
+  });
+}
+
+document.getElementById("trip-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const errorEl = document.getElementById("trip-error");
+  errorEl.textContent = "";
+
+  const origin = document.getElementById("origin").value.trim();
+  const destination = document.getElementById("destination").value.trim();
+  const startDate = document.getElementById("start").value;
+  const endDate = document.getElementById("end").value;
+  const budget = document.getElementById("budget").value;
+  const interests = document.getElementById("interests").value
+    .split(",").map(s => s.trim()).filter(Boolean);
+
+  if (endDate < startDate) {
+    errorEl.textContent = "End date must be after the start date.";
+    return;
+  }
+
+  const submitBtn = document.getElementById("submit-btn");
+  const ledger = document.getElementById("ledger");
+  const results = document.getElementById("results");
+
+  submitBtn.disabled = true;
+  results.classList.remove("show");
+  ledger.classList.add("show");
+  setLedgerState("planner", "RUNNING");
+
+  try {
+    const res = await fetch(`${API_BASE}/trip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+      body: JSON.stringify({ origin, destination, startDate, endDate, budget, interests }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Could not start trip planning");
+
+    pollTimer = setInterval(() => pollStatus(data.tripId), 2500);
+  } catch (err) {
+    errorEl.textContent = err.message;
+    submitBtn.disabled = false;
+    ledger.classList.remove("show");
+  }
+});
+
+async function pollStatus(tripId) {
+  const submitBtn = document.getElementById("submit-btn");
+  const errorEl = document.getElementById("trip-error");
+  try {
+    const res = await fetch(`${API_BASE}/trip/${tripId}`, {
+      headers: { "Authorization": `Bearer ${idToken}` },
+    });
+    const data = await res.json();
+    setLedgerState(data.currentStep, data.status);
+
+    if (data.status === "SUCCEEDED" && data.result) {
+      clearInterval(pollTimer);
+      submitBtn.disabled = false;
+      renderResult(data.result);
+      loadHistory();
+    } else if (data.status === "FAILED") {
+      clearInterval(pollTimer);
+      submitBtn.disabled = false;
+      errorEl.textContent = "One of the agents failed — check the Lambda logs for trip_orchestrator.";
+    }
+  } catch (err) {
+    // transient network error, next poll will retry
+  }
+}
+
+function renderResult(itinerary) {
+  document.getElementById("results").classList.add("show");
+
+  const daysEl = document.getElementById("days");
+  const route = itinerary.origin ? `${itinerary.origin} → ${itinerary.destination || ""}` : (itinerary.destination || "");
+  daysEl.innerHTML = `<h2 style="margin-bottom:16px;">${route}</h2>`;
+  (itinerary.days || []).forEach(day => {
+    const card = document.createElement("div");
+    card.className = "doc day-card";
+    card.innerHTML = `
+      <div class="doc-label">${day.date || ""}</div>
+      <h3>${day.title || ""}</h3>
+      <ul>${(day.activities || []).map(a => `<li>${a}</li>`).join("")}</ul>
+    `;
+    daysEl.appendChild(card);
+  });
+
+  const transportCard = document.getElementById("transport-card");
+  const transport = itinerary.transport;
+  if (transport && transport.options && transport.options.length) {
+    transportCard.style.display = "block";
+    document.getElementById("transport-rows").innerHTML = transport.options.map(o => `
+      <div class="transport-row">
+        <span class="mode">${o.mode || ""}</span>
+        <span class="detail">${o.costRange || ""}${o.duration ? " · " + o.duration : ""}</span>
+      </div>
+    `).join("");
+    document.getElementById("transport-recommended").textContent = transport.recommended || "";
+  } else {
+    transportCard.style.display = "none";
+  }
+
+  const budget = itinerary.budget || {};
+  const breakdown = budget.breakdown || {};
+  const max = Math.max(1, ...Object.values(breakdown));
+  const rows = document.getElementById("budget-rows");
+  rows.innerHTML = "";
+  Object.entries(breakdown).forEach(([label, amount]) => {
+    const pct = Math.round((amount / max) * 100);
+    const row = document.createElement("div");
+    row.className = "budget-row";
+    row.innerHTML = `
+      <span class="label">${label}</span>
+      <span class="bar-track"><span class="bar-fill" style="width:${pct}%"></span></span>
+      <span class="amount">₹${Math.round(amount).toLocaleString("en-IN")}</span>
+    `;
+    rows.appendChild(row);
+  });
+  document.getElementById("budget-total-amt").textContent = `₹${Math.round(budget.estimatedTotal || 0).toLocaleString("en-IN")}`;
+  const tag = document.getElementById("budget-tag");
+  tag.textContent = budget.withinBudget ? "Within budget" : "Over budget";
+  tag.className = "budget-tag " + (budget.withinBudget ? "ok" : "over");
+
+  document.getElementById("tips-list").innerHTML = (itinerary.tips || []).map(t => `<li>${t}</li>`).join("");
+
+  const mapCard = document.getElementById("map-card");
+  if (itinerary.coordinates) {
+    mapCard.style.display = "block";
+    const { lat, lon } = itinerary.coordinates;
+    const map = L.map("map").setView([lat, lon], 12);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+    L.marker([lat, lon]).addTo(map);
+    setTimeout(() => map.invalidateSize(), 200);
+  } else {
+    mapCard.style.display = "none";
+  }
+}
+</script>
+</body>
+</html>

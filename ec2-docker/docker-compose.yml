@@ -1,0 +1,12 @@
+services:
+  trip-planner:
+    build: .
+    ports:
+      - "80:80"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - TABLE_NAME=trip-planner-sessions
+      - USER_POOL_ID=${USER_POOL_ID}
+      - CLIENT_ID=${CLIENT_ID}
+      - AWS_REGION=us-east-1
+    restart: unless-stopped

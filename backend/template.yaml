@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Multi-agent trip planner. A LangGraph graph (planner -> budget/local info
+  in parallel -> writer) runs inside one Lambda, triggered asynchronously
+  after a request is authenticated by Cognito. Sized to stay inside AWS's
+  free tier for hobby-project usage.
+
+Parameters:
+  GroqApiKey:
+    Type: String
+    NoEcho: true
+    Description: Free API key from console.groq.com. Used by every agent node to call the LLM.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 256
+
+Resources:
+
+  TripSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: trip-planner-sessions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: tripId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tripId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: UserTripsIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  TripPlannerUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: trip-planner-users
+      UsernameAttributes: [ email ]
+      AutoVerifiedAttributes: [ email ]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: false
+
+  TripPlannerUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref TripPlannerUserPool
+      ClientName: trip-planner-web
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+
+  TripOrchestratorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/trip_orchestrator/
+      Handler: app.lambda_handler
+      Timeout: 180
+      MemorySize: 512
+      Environment:
+        Variables:
+          GROQ_API_KEY: !Ref GroqApiKey
+          TABLE_NAME: !Ref TripSessionsTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TripSessionsTable
+
+  StartTripFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/start_trip/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TripSessionsTable
+          ORCHESTRATOR_FUNCTION_NAME: !Ref TripOrchestratorFunction
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref TripSessionsTable
+        - LambdaInvokePolicy:
+            FunctionName: !Ref TripOrchestratorFunction
+      Events:
+        StartTrip:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TripPlannerApi
+            Path: /trip
+            Method: post
+
+  GetTripStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/get_trip_status/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TripSessionsTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TripSessionsTable
+      Events:
+        GetTripStatus:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TripPlannerApi
+            Path: /trip/{tripId}
+            Method: get
+
+  ListTripsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/list_trips/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TripSessionsTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TripSessionsTable
+      Events:
+        ListTrips:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref TripPlannerApi
+            Path: /trips
+            Method: get
+
+  TripPlannerApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: [ "*" ]
+        AllowMethods: [ GET, POST, OPTIONS ]
+        AllowHeaders: [ Content-Type, Authorization ]
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${TripPlannerUserPool}"
+              audience:
+                - !Ref TripPlannerUserPoolClient
+            IdentitySource: "$request.header.Authorization"
+        DefaultAuthorizer: CognitoAuthorizer
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "trip-planner-frontend-${AWS::AccountId}"
+      WebsiteConfiguration:
+        IndexDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: "*"
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+
+Outputs:
+  ApiEndpoint:
+    Description: Base URL for the trip planner API - paste into frontend/index.html
+    Value: !Sub "https://${TripPlannerApi}.execute-api.${AWS::Region}.amazonaws.com"
+  FrontendUrl:
+    Description: S3 static website URL for the frontend
+    Value: !GetAtt FrontendBucket.WebsiteURL
+  FrontendBucketName:
+    Description: Bucket to sync the frontend files into
+    Value: !Ref FrontendBucket
+  UserPoolId:
+    Description: Cognito User Pool ID - paste into frontend/index.html
+    Value: !Ref TripPlannerUserPool
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID - paste into frontend/index.html
+    Value: !Ref TripPlannerUserPoolClient
+  TableName:
+    Value: !Ref TripSessionsTable

@@ -1,0 +1,17 @@
+# Secrets - never commit these
+backend/samconfig.toml
+ec2-docker/.env
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# SAM build artifacts
+backend/.aws-sam/
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.vscode/
