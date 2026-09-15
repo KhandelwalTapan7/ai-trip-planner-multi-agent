@@ -1,15 +1,11 @@
-import os
 import json
 from typing import TypedDict, Optional, List, Dict, Any
 
-import boto3
 from langgraph.graph import StateGraph, END
 
+import db
 from groq_client import ask_json
 from weather_client import geocode, get_weather
-
-dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "us-east-1"))
-table = dynamodb.Table(os.environ["TABLE_NAME"])
 
 
 class TripState(TypedDict, total=False):
@@ -20,6 +16,7 @@ class TripState(TypedDict, total=False):
     end_date: str
     budget: Optional[float]
     interests: List[str]
+    travelers: int
     planner: Dict[str, Any]
     budget_result: Dict[str, Any]
     local_info: Dict[str, Any]
@@ -28,12 +25,7 @@ class TripState(TypedDict, total=False):
 
 
 def mark_step(trip_id, step):
-    table.update_item(
-        Key={"tripId": trip_id},
-        UpdateExpression="SET currentStep = :s, #st = :running",
-        ExpressionAttributeNames={"#st": "status"},
-        ExpressionAttributeValues={":s": step, ":running": "RUNNING"},
-    )
+    db.mark_step(trip_id, step)
 
 
 def planner_node(state: TripState) -> dict:
@@ -41,8 +33,14 @@ def planner_node(state: TripState) -> dict:
     system = (
         "You are the planning agent in a trip-planning system for Indian "
         "travelers. Given an origin, destination, date range and interests, "
-        'produce a rough day-by-day skeleton. Respond with ONLY JSON: '
-        '{"days": [{"date": "YYYY-MM-DD", "theme": "short theme"}]}'
+        "produce a rough day-by-day skeleton. The ENTIRE trip takes place "
+        "in and around the destination city only - do not route the "
+        "traveler through other cities or plan stopovers elsewhere, even "
+        "if a real-world road/rail route would pass through them. The "
+        "first day covers arrival at the destination and the last day "
+        "covers departure; every day in between must be themed around "
+        'things to do inside the destination itself. Respond with ONLY '
+        'JSON: {"days": [{"date": "YYYY-MM-DD", "theme": "short theme"}]}'
     )
     user = (
         f"Origin: {state.get('origin', '')}\n"
@@ -57,10 +55,21 @@ def planner_node(state: TripState) -> dict:
 def budget_node(state: TripState) -> dict:
     mark_step(state["trip_id"], "budget")
     days = state.get("planner", {}).get("days", [])
+    target_budget = state.get("budget")
+    travelers = state.get("travelers", 1)
     system = (
         "You are the budget checking agent in a trip-planning system for "
-        "Indian travelers. Given an origin, destination, trip length and "
-        "target budget, estimate a realistic cost breakdown in INR. Respond "
+        "Indian travelers. Given an origin, destination, trip length, "
+        "number of travelers and target budget, estimate a realistic cost "
+        "breakdown in INR for the WHOLE GROUP together. Transport and food "
+        "scale per traveler (each person needs their own seat/meal); "
+        "lodging usually does not scale linearly since travelers can share "
+        "rooms - use judgement (e.g. 2 people can often share one room, "
+        "so lodging for 2 isn't simply double that for 1). Transport must "
+        "include a ROUND TRIP (there and back) for every traveler, not just "
+        "one leg for one person. Be realistic even if the target budget is "
+        "unrealistically low or high for the trip - do not distort your "
+        "estimate to force it to fit the target. Respond "
         'with ONLY JSON: {"currency": "INR", "estimatedTotal": number, '
         '"breakdown": {"transport": number, "lodging": number, "food": number, '
         '"activities": number}, "withinBudget": boolean, "note": "one short sentence"}'
@@ -69,9 +78,19 @@ def budget_node(state: TripState) -> dict:
         f"Origin: {state.get('origin', '')}\n"
         f"Destination: {state['destination']}\n"
         f"Trip length: {len(days)} days\n"
-        f"Target budget (INR): {state.get('budget') or 'not specified, suggest a reasonable mid-range budget in INR'}"
+        f"Number of travelers: {travelers}\n"
+        f"Target budget for the whole group (INR): {target_budget or 'not specified, suggest a reasonable mid-range budget in INR'}"
     )
-    return {"budget_result": ask_json(system, user, temperature=0.3, max_tokens=500)}
+    result = ask_json(system, user, temperature=0.3, max_tokens=500)
+
+    # Don't trust the model's own withinBudget judgment - compute it deterministically.
+    if target_budget:
+        try:
+            result["withinBudget"] = float(result.get("estimatedTotal", 0)) <= float(target_budget)
+        except (TypeError, ValueError):
+            pass
+
+    return {"budget_result": result}
 
 
 def local_info_node(state: TripState) -> dict:
@@ -98,17 +117,23 @@ def local_info_node(state: TripState) -> dict:
 
 def transport_node(state: TripState) -> dict:
     mark_step(state["trip_id"], "transport")
+    travelers = state.get("travelers", 1)
     system = (
         "You are the transport agent in a trip-planning system for Indian "
-        "travelers. Given an origin and destination, list realistic ways to "
-        "make that journey - choose from flight, train, bus, self-drive/car, "
-        "whichever are actually practical for this specific route - with an "
-        "approximate cost range in INR and approximate travel duration. "
+        "travelers. Given an origin, destination and number of travelers, "
+        "list realistic ways to make that journey - choose from flight, "
+        "train, bus, self-drive/car, whichever are actually practical for "
+        "this specific route. The costRange for each option must be the "
+        "ROUND TRIP cost for ALL travelers combined (not one leg, not one "
+        "person) - state this clearly, e.g. 'round trip for 3 travelers'. "
+        "Self-drive/car cost does not multiply per traveler (it's one "
+        "vehicle) - only flight/train/bus costs scale with traveler count. "
+        "Give an approximate travel duration for one leg. "
         'Respond with ONLY JSON: {"options": [{"mode": "Flight", "costRange": '
-        '"₹3,500–₹6,000", "duration": "1h 30m", "note": "short practical note"}], '
+        '"₹3,500–₹6,000 round trip", "duration": "1h 30m", "note": "short practical note"}], '
         '"recommended": "one short sentence recommending the best option and why"}'
     )
-    user = f"Origin: {state.get('origin', '')}\nDestination: {state['destination']}"
+    user = f"Origin: {state.get('origin', '')}\nDestination: {state['destination']}\nNumber of travelers: {travelers}"
     return {"transport": ask_json(system, user, temperature=0.4, max_tokens=600)}
 
 
@@ -118,7 +143,14 @@ def writer_node(state: TripState) -> dict:
         "You are the final itinerary writer agent in a trip-planning system "
         "for Indian travelers. Combine the rough day-by-day plan, the budget "
         "estimate, the local info and the transport options into one "
-        "detailed, polished itinerary, all costs in INR. For each day, "
+        "detailed, polished itinerary for the whole group of travelers, "
+        "all costs in INR representing the group total (not per-person "
+        "unless stated). The ENTIRE trip "
+        "takes place in and around the destination city only - never plan "
+        "days around other cities or a multi-city road trip, even if one "
+        "would be geographically plausible; only the first day (arrival) "
+        "and last day (departure) mention travel. Transport cost in the "
+        "budget breakdown must be the ROUND TRIP cost. For each day, "
         "write 4 to 6 specific activities using real place names drawn "
         "from the local info provided (attractions, markets, food spots), "
         "each prefixed with a time of day where it makes sense, e.g. "
@@ -137,6 +169,7 @@ def writer_node(state: TripState) -> dict:
     user = json.dumps({
         "origin": state.get("origin"),
         "destination": state["destination"],
+        "travelers": state.get("travelers", 1),
         "roughPlan": state.get("planner"),
         "budgetEstimate": state.get("budget_result"),
         "localInfo": state.get("local_info"),
@@ -144,19 +177,23 @@ def writer_node(state: TripState) -> dict:
     })
     itinerary = ask_json(system, user, max_tokens=5000)
     itinerary["coordinates"] = (state.get("local_info") or {}).get("coordinates")
+    itinerary["weather"] = (state.get("local_info") or {}).get("weather")
+    itinerary["attractions"] = (state.get("local_info") or {}).get("attractions")
+    itinerary["travelers"] = state.get("travelers", 1)
     itinerary.setdefault("origin", state.get("origin"))
     itinerary.setdefault("transport", state.get("transport"))
 
-    table.update_item(
-        Key={"tripId": state["trip_id"]},
-        UpdateExpression="SET itinerary = :i, #st = :done, currentStep = :w",
-        ExpressionAttributeNames={"#st": "status"},
-        ExpressionAttributeValues={
-            ":i": json.dumps(itinerary),
-            ":done": "SUCCEEDED",
-            ":w": "writer",
-        },
-    )
+    # Don't trust the model's own withinBudget judgment - compute it deterministically.
+    target_budget = state.get("budget")
+    if target_budget and itinerary.get("budget"):
+        try:
+            itinerary["budget"]["withinBudget"] = (
+                float(itinerary["budget"].get("estimatedTotal", 0)) <= float(target_budget)
+            )
+        except (TypeError, ValueError):
+            pass
+
+    db.save_itinerary(state["trip_id"], itinerary)
     return {"itinerary": itinerary}
 
 

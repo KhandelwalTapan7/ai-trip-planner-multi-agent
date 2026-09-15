@@ -1,0 +1,702 @@
+{
+  "name": "Trip Planner - Five Agents",
+  "nodes": [
+    {
+      "id": "webhook1",
+      "name": "Trip Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "path": "trip",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "respond1",
+      "name": "Respond Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"accepted\": true, \"tripId\": $json.body.trip_id } }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "init1",
+      "name": "Init Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst b = $input.item.json.body;\nreturn [{\n  json: {\n    trip_id: b.trip_id,\n    origin: b.origin,\n    destination: b.destination,\n    start_date: b.start_date,\n    end_date: b.end_date,\n    budget: b.budget,\n    interests: b.interests || [],\n    travelers: b.travelers || 1,\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "plannerBuild",
+      "name": "Build Planner Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst j = $input.item.json;\nconst system = \"You are the planning agent in a trip-planning system for Indian travelers. Given an origin, destination, date range and interests, produce a rough day-by-day skeleton. The ENTIRE trip takes place in and around the destination city only - do not route the traveler through other cities or plan stopovers elsewhere, even if a real-world road/rail route would pass through them. The first day covers arrival at the destination and the last day covers departure; every day in between must be themed around things to do inside the destination itself. Respond with ONLY JSON: {\\\"days\\\": [{\\\"date\\\": \\\"YYYY-MM-DD\\\", \\\"theme\\\": \\\"short theme\\\"}]}\";\nconst user = `Origin: ${j.origin}\\nDestination: ${j.destination}\\nDates: ${j.start_date} to ${j.end_date}\\nInterests: ${(j.interests||[]).join(', ') || 'general sightseeing'}`;\nreturn [{ json: { ...j, groqBody: JSON.stringify({\n  model: \"openai/gpt-oss-120b\",\n  messages: [{role:\"system\", content: system}, {role:\"user\", content: user}],\n  temperature: 0.4, max_tokens: 800, reasoning_effort: \"low\",\n  response_format: {type:\"json_object\"}\n}) } }];\n"
+      }
+    },
+    {
+      "id": "plannerHttp",
+      "name": "Planner Groq Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{$json.groqBody}}"
+      }
+    },
+    {
+      "id": "plannerParse",
+      "name": "Parse Planner",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst prev = $('Build Planner Prompt').item.json;\nconst content = JSON.parse($input.item.json.choices[0].message.content);\nreturn [{ json: { ...prev, planner: { days: content.days || [] } } }];\n"
+      }
+    },
+    {
+      "id": "budgetBuild",
+      "name": "Build Budget Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst j = $input.item.json;\nconst days = (j.planner && j.planner.days) || [];\nconst system = \"You are the budget checking agent in a trip-planning system for Indian travelers. Given an origin, destination, trip length, number of travelers and target budget, estimate a realistic cost breakdown in INR for the WHOLE GROUP together. Transport and food scale per traveler (each person needs their own seat/meal); lodging usually does not scale linearly since travelers can share rooms - use judgement (e.g. 2 people can often share one room, so lodging for 2 isn't simply double that for 1). Transport must include a ROUND TRIP (there and back) for every traveler, not just one leg for one person. Be realistic even if the target budget is unrealistically low or high for the trip - do not distort your estimate to force it to fit the target. Respond with ONLY JSON: {\\\"currency\\\": \\\"INR\\\", \\\"estimatedTotal\\\": number, \\\"breakdown\\\": {\\\"transport\\\": number, \\\"lodging\\\": number, \\\"food\\\": number, \\\"activities\\\": number}, \\\"withinBudget\\\": boolean, \\\"note\\\": \\\"one short sentence\\\"}\";\nconst user = `Origin: ${j.origin}\\nDestination: ${j.destination}\\nTrip length: ${days.length} days\\nNumber of travelers: ${j.travelers}\\nTarget budget for the whole group (INR): ${j.budget || 'not specified, suggest a reasonable mid-range budget in INR'}`;\nreturn [{ json: { ...j, groqBody: JSON.stringify({\n  model: \"openai/gpt-oss-120b\",\n  messages: [{role:\"system\", content: system}, {role:\"user\", content: user}],\n  temperature: 0.3, max_tokens: 500, reasoning_effort: \"low\",\n  response_format: {type:\"json_object\"}\n}) } }];\n"
+      }
+    },
+    {
+      "id": "budgetHttp",
+      "name": "Budget Groq Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{$json.groqBody}}"
+      }
+    },
+    {
+      "id": "budgetParse",
+      "name": "Parse Budget",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst prev = $('Build Budget Prompt').item.json;\nconst content = JSON.parse($input.item.json.choices[0].message.content);\nif (prev.budget) {\n  const total = parseFloat(content.estimatedTotal || 0);\n  const target = parseFloat(prev.budget);\n  if (!isNaN(total) && !isNaN(target)) content.withinBudget = total <= target;\n}\nreturn [{ json: { ...prev, budget_result: content } }];\n"
+      }
+    },
+    {
+      "id": "geocodeHttp",
+      "name": "Geocode Destination",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://geocoding-api.open-meteo.com/v1/search",
+        "options": {},
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{$json.destination}}"
+            },
+            {
+              "name": "count",
+              "value": "10"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "geocodeParse",
+      "name": "Parse Geocode",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const prev = $('Parse Budget').item.json;\nconst results = $input.item.json.results || [];\nconst indiaMatch = results.find(r => r.country === 'India');\nconst best = indiaMatch || results[0];\nconst coords = best ? { lat: best.latitude, lon: best.longitude } : null;\nreturn [{ json: { ...prev, coordinates: coords } }];"
+      }
+    },
+    {
+      "id": "weatherHttp",
+      "name": "Fetch Weather",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.open-meteo.com/v1/forecast",
+        "options": {},
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "latitude",
+              "value": "={{$json.coordinates ? $json.coordinates.lat : 0}}"
+            },
+            {
+              "name": "longitude",
+              "value": "={{$json.coordinates ? $json.coordinates.lon : 0}}"
+            },
+            {
+              "name": "daily",
+              "value": "temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+            },
+            {
+              "name": "timezone",
+              "value": "auto"
+            },
+            {
+              "name": "start_date",
+              "value": "={{$json.start_date}}"
+            },
+            {
+              "name": "end_date",
+              "value": "={{$json.end_date}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "weatherParse",
+      "name": "Parse Weather",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst prev = $('Parse Geocode').item.json;\nconst daily = $input.item.json.daily || {};\nreturn [{ json: { ...prev, weather: daily } }];\n"
+      }
+    },
+    {
+      "id": "localinfoBuild",
+      "name": "Build LocalInfo Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst j = $input.item.json;\nconst system = \"You are the local info agent in a trip-planning system. Given a destination and interests, suggest 6 to 10 specific, real attractions (not generic categories) and 5 to 6 short, practical local tips. Respond with ONLY JSON: {\\\"attractions\\\": [{\\\"name\\\": \\\"...\\\", \\\"why\\\": \\\"short reason\\\"}], \\\"tips\\\": [\\\"short practical tip\\\", \\\"...\\\"]}\";\nconst user = `Destination: ${j.destination}\\nInterests: ${(j.interests||[]).join(', ') || 'general sightseeing'}`;\nreturn [{ json: { ...j, groqBody: JSON.stringify({\n  model: \"openai/gpt-oss-120b\",\n  messages: [{role:\"system\", content: system}, {role:\"user\", content: user}],\n  temperature: 0.5, max_tokens: 1200, reasoning_effort: \"low\",\n  response_format: {type:\"json_object\"}\n}) } }];\n"
+      }
+    },
+    {
+      "id": "localinfoHttp",
+      "name": "LocalInfo Groq Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3300,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{$json.groqBody}}"
+      }
+    },
+    {
+      "id": "localinfoParse",
+      "name": "Parse LocalInfo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst prev = $('Build LocalInfo Prompt').item.json;\nconst content = JSON.parse($input.item.json.choices[0].message.content);\nconst local_info = { attractions: content.attractions || [], tips: content.tips || [], weather: prev.weather, coordinates: prev.coordinates };\nreturn [{ json: { ...prev, local_info } }];\n"
+      }
+    },
+    {
+      "id": "transportBuild",
+      "name": "Build Transport Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3740,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst j = $input.item.json;\nconst system = \"You are the transport agent in a trip-planning system for Indian travelers. Given an origin, destination and number of travelers, list realistic ways to make that journey - choose from flight, train, bus, self-drive/car, whichever are actually practical for this specific route. The costRange for each option must be the ROUND TRIP cost for ALL travelers combined (not one leg, not one person) - state this clearly, e.g. 'round trip for 3 travelers'. Self-drive/car cost does not multiply per traveler (it's one vehicle) - only flight/train/bus costs scale with traveler count. Give an approximate travel duration for one leg. Respond with ONLY JSON: {\\\"options\\\": [{\\\"mode\\\": \\\"Flight\\\", \\\"costRange\\\": \\\"\u20b93,500\u2013\u20b96,000 round trip\\\", \\\"duration\\\": \\\"1h 30m\\\", \\\"note\\\": \\\"short practical note\\\"}], \\\"recommended\\\": \\\"one short sentence recommending the best option and why\\\"}\";\nconst user = `Origin: ${j.origin}\\nDestination: ${j.destination}\\nNumber of travelers: ${j.travelers}`;\nreturn [{ json: { ...j, groqBody: JSON.stringify({\n  model: \"openai/gpt-oss-120b\",\n  messages: [{role:\"system\", content: system}, {role:\"user\", content: user}],\n  temperature: 0.4, max_tokens: 600, reasoning_effort: \"low\",\n  response_format: {type:\"json_object\"}\n}) } }];\n"
+      }
+    },
+    {
+      "id": "transportHttp",
+      "name": "Transport Groq Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3960,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{$json.groqBody}}"
+      }
+    },
+    {
+      "id": "transportParse",
+      "name": "Parse Transport",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4180,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst prev = $('Build Transport Prompt').item.json;\nconst content = JSON.parse($input.item.json.choices[0].message.content);\nreturn [{ json: { ...prev, transport: content } }];\n"
+      }
+    },
+    {
+      "id": "writerBuild",
+      "name": "Build Writer Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4400,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst j = $input.item.json;\nconst system = \"You are the final itinerary writer agent in a trip-planning system for Indian travelers. Combine the rough day-by-day plan, the budget estimate, the local info and the transport options into one detailed, polished itinerary for the whole group of travelers, all costs in INR representing the group total (not per-person unless stated). The ENTIRE trip takes place in and around the destination city only - never plan days around other cities or a multi-city road trip, even if one would be geographically plausible; only the first day (arrival) and last day (departure) mention travel. Transport cost in the budget breakdown must be the ROUND TRIP cost. For each day, write 4 to 6 specific activities using real place names drawn from the local info provided (attractions, markets, food spots), each prefixed with a time of day where it makes sense, e.g. 'Morning: Visit X and explore the old bazaar.' Spread the attractions and tips across the days rather than reusing the same one or two repeatedly. Respond with ONLY JSON: {\\\"origin\\\": \\\"...\\\", \\\"destination\\\": \\\"...\\\", \\\"days\\\": [{\\\"date\\\": \\\"YYYY-MM-DD\\\", \\\"title\\\": \\\"...\\\", \\\"activities\\\": [\\\"...\\\", \\\"...\\\"]}], \\\"budget\\\": {\\\"currency\\\": \\\"INR\\\", \\\"estimatedTotal\\\": number, \\\"breakdown\\\": {\\\"transport\\\": number, \\\"lodging\\\": number, \\\"food\\\": number, \\\"activities\\\": number}, \\\"withinBudget\\\": boolean, \\\"note\\\": \\\"...\\\"}, \\\"transport\\\": {\\\"options\\\": [{\\\"mode\\\": \\\"...\\\", \\\"costRange\\\": \\\"...\\\", \\\"duration\\\": \\\"...\\\", \\\"note\\\": \\\"...\\\"}], \\\"recommended\\\": \\\"...\\\"}, \\\"tips\\\": [\\\"...\\\", \\\"...\\\"]}\";\nconst user = JSON.stringify({\n  origin: j.origin, destination: j.destination, travelers: j.travelers,\n  roughPlan: j.planner, budgetEstimate: j.budget_result, localInfo: j.local_info,\n  transportOptions: j.transport\n});\nreturn [{ json: { ...j, groqBody: JSON.stringify({\n  model: \"openai/gpt-oss-120b\",\n  messages: [{role:\"system\", content: system}, {role:\"user\", content: user}],\n  temperature: 0.4, max_tokens: 5000, reasoning_effort: \"low\",\n  response_format: {type:\"json_object\"}\n}) } }];\n"
+      }
+    },
+    {
+      "id": "writerHttp",
+      "name": "Writer Groq Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4620,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "options": {},
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.GROQ_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{$json.groqBody}}"
+      }
+    },
+    {
+      "id": "writerParse",
+      "name": "Parse Writer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4840,
+        300
+      ],
+      "parameters": {
+        "jsCode": "\nconst prev = $('Build Writer Prompt').item.json;\nconst itinerary = JSON.parse($input.item.json.choices[0].message.content);\nitinerary.coordinates = prev.local_info ? prev.local_info.coordinates : null;\nitinerary.weather = prev.local_info ? prev.local_info.weather : null;\nitinerary.attractions = prev.local_info ? prev.local_info.attractions : null;\nitinerary.travelers = prev.travelers;\nif (!itinerary.origin) itinerary.origin = prev.origin;\nif (!itinerary.transport) itinerary.transport = prev.transport;\nif (prev.budget && itinerary.budget) {\n  const total = parseFloat(itinerary.budget.estimatedTotal || 0);\n  const target = parseFloat(prev.budget);\n  if (!isNaN(total) && !isNaN(target)) itinerary.budget.withinBudget = total <= target;\n}\nreturn [{ json: { trip_id: prev.trip_id, itinerary } }];\n"
+      }
+    },
+    {
+      "id": "saveNode",
+      "name": "Save Itinerary to Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        5060,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE trips SET itinerary = $1::jsonb, status = 'SUCCEEDED', current_step = 'writer' WHERE trip_id = $2",
+        "options": {
+          "queryReplacement": "={{ [ JSON.stringify($json.itinerary), $json.trip_id ] }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Trip Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond Accepted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Accepted": {
+      "main": [
+        [
+          {
+            "node": "Init Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init Fields": {
+      "main": [
+        [
+          {
+            "node": "Build Planner Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Planner Prompt": {
+      "main": [
+        [
+          {
+            "node": "Planner Groq Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planner Groq Call": {
+      "main": [
+        [
+          {
+            "node": "Parse Planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Planner": {
+      "main": [
+        [
+          {
+            "node": "Build Budget Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Budget Prompt": {
+      "main": [
+        [
+          {
+            "node": "Budget Groq Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Budget Groq Call": {
+      "main": [
+        [
+          {
+            "node": "Parse Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Budget": {
+      "main": [
+        [
+          {
+            "node": "Geocode Destination",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Geocode Destination": {
+      "main": [
+        [
+          {
+            "node": "Parse Geocode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Geocode": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weather",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weather": {
+      "main": [
+        [
+          {
+            "node": "Parse Weather",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Weather": {
+      "main": [
+        [
+          {
+            "node": "Build LocalInfo Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LocalInfo Prompt": {
+      "main": [
+        [
+          {
+            "node": "LocalInfo Groq Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LocalInfo Groq Call": {
+      "main": [
+        [
+          {
+            "node": "Parse LocalInfo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse LocalInfo": {
+      "main": [
+        [
+          {
+            "node": "Build Transport Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Transport Prompt": {
+      "main": [
+        [
+          {
+            "node": "Transport Groq Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transport Groq Call": {
+      "main": [
+        [
+          {
+            "node": "Parse Transport",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Transport": {
+      "main": [
+        [
+          {
+            "node": "Build Writer Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Writer Prompt": {
+      "main": [
+        [
+          {
+            "node": "Writer Groq Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Writer Groq Call": {
+      "main": [
+        [
+          {
+            "node": "Parse Writer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Writer": {
+      "main": [
+        [
+          {
+            "node": "Save Itinerary to Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

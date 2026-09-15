@@ -5,10 +5,10 @@ import requests
 
 GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "openai/gpt-oss-120b"
 
 
-def ask_json(system_prompt, user_prompt, temperature=0.4, max_tokens=3000, retries=3):
+def ask_json(system_prompt, user_prompt, temperature=0.4, max_tokens=6000, retries=3):
     for attempt in range(retries):
         resp = requests.post(
             GROQ_URL,
@@ -21,6 +21,7 @@ def ask_json(system_prompt, user_prompt, temperature=0.4, max_tokens=3000, retri
                 ],
                 "temperature": temperature,
                 "max_tokens": max_tokens,
+                "reasoning_effort": "low",
                 "response_format": {"type": "json_object"},
             },
             timeout=45,
@@ -29,5 +30,6 @@ def ask_json(system_prompt, user_prompt, temperature=0.4, max_tokens=3000, retri
             wait = float(resp.headers.get("Retry-After", 2 ** (attempt + 1)))
             time.sleep(wait)
             continue
-        resp.raise_for_status()
+        if not resp.ok:
+            raise RuntimeError(f"{resp.status_code} error from Groq: {resp.text}")
         return json.loads(resp.json()["choices"][0]["message"]["content"])
