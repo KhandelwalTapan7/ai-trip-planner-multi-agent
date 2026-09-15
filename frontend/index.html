@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Field Itinerary — trip planner</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%232F6F5E'/%3E%3Cstop offset='1' stop-color='%231B2B28'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='18' cy='18' r='17' fill='url(%23g)'/%3E%3Cpath d='M8 25 C 10 15, 17 9, 27 10' stroke='%23EFE7D8' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-dasharray='1 3.2'/%3E%3Ccircle cx='8' cy='25' r='1.8' fill='%23EFE7D8'/%3E%3Ccircle cx='27' cy='10.4' r='2.8' fill='%23B8862B'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -25,8 +26,10 @@
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',sans-serif;line-height:1.55;}
   .wrap{max-width:1040px;margin:0 auto;padding:32px 24px 80px;}
   h1,h2,h3{font-family:'Fraunces',serif;font-weight:500;margin:0;}
-  .brand{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
-  .brand span{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--ink-soft);text-transform:uppercase;}
+  .brand{display:flex;align-items:center;gap:12px;margin-bottom:6px;}
+  .brand-text{display:flex;flex-direction:column;line-height:1.15;}
+  .brand-text .brand-kicker{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.22em;color:var(--gold);text-transform:uppercase;}
+  .brand-text .brand-name{font-family:'Fraunces',serif;font-size:17px;color:var(--ink);letter-spacing:.01em;}
   .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
   .who{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:12px;}
   .who button{padding:6px 12px;font-size:11px;}
@@ -34,6 +37,7 @@
   .tagline{color:var(--ink-soft);font-size:15px;margin-bottom:36px;}
 
   .doc{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:28px 28px 24px;margin-bottom:28px;}
+  .day-card.doc{padding:26px 30px 26px;}
   .doc-label{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:18px;}
 
   .tabs{display:flex;gap:18px;margin-bottom:20px;}
@@ -51,7 +55,24 @@
   input::placeholder{color:#9AA39D;}
   .field:focus-within{border-bottom-color:var(--accent);}
 
+  .auth-wrap{display:grid;grid-template-columns:1fr 1.1fr;border-radius:14px;overflow:hidden;border:1px solid var(--line);margin-bottom:28px;}
+  @media(max-width:760px){.auth-wrap{grid-template-columns:1fr;}}
+  .auth-hero{background:linear-gradient(160deg,#2F6F5E 0%,#1B2B28 100%);color:#fff;padding:40px 32px;display:flex;flex-direction:column;justify-content:center;gap:14px;position:relative;overflow:hidden;}
+  .auth-hero::before{content:"";position:absolute;top:-40px;right:-40px;width:180px;height:180px;border-radius:50%;background:rgba(184,134,43,.25);}
+  .auth-hero::after{content:"";position:absolute;bottom:-60px;left:-30px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.06);}
+  .auth-hero h2{font-family:'Fraunces',serif;font-size:26px;color:#fff;line-height:1.3;position:relative;z-index:1;}
+  .auth-hero p{color:rgba(255,255,255,.8);font-size:14px;line-height:1.6;position:relative;z-index:1;margin:0;}
+  .auth-hero .auth-badge{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold-soft);background:rgba(255,255,255,.1);padding:5px 12px;border-radius:20px;display:inline-block;width:fit-content;position:relative;z-index:1;}
+  .auth-form-side{background:var(--paper);padding:32px;}
   .submit-row{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;margin-top:6px;}
+  .interest-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+  .interest-chip{font-family:'IBM Plex Sans',sans-serif;font-size:12.5px;background:var(--accent-soft);color:var(--ink-soft);border:1px solid transparent;border-radius:20px;padding:6px 13px;cursor:pointer;transition:all .15s ease;}
+  .interest-chip:hover{border-color:var(--accent);}
+  .interest-chip.selected{background:var(--accent);color:#fff;}
+  .dest-picks{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+  .dest-pick{font-family:'IBM Plex Sans',sans-serif;font-size:11.5px;background:var(--gold-soft);color:var(--ink-soft);border:1px solid transparent;border-radius:16px;padding:5px 11px;cursor:pointer;transition:all .15s ease;}
+  .dest-pick:hover{border-color:var(--gold);color:var(--ink);}
+  #surprise-btn{background:var(--accent-soft);}
   .error{color:var(--alert);font-size:13px;font-family:'IBM Plex Mono',monospace;}
   .hint{color:var(--ink-soft);font-size:13px;font-family:'IBM Plex Mono',monospace;}
   button{font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.08em;text-transform:uppercase;background:var(--ink);color:var(--bg);border:none;padding:13px 24px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px;}
@@ -81,10 +102,54 @@
   .results.show{display:grid;grid-template-columns:1.5fr 1fr;gap:24px;align-items:start;}
   @media(max-width:820px){.results.show{grid-template-columns:1fr;}}
 
-  .day-card{margin-bottom:16px;}
-  .day-card h3{font-size:19px;margin-bottom:10px;}
-  .day-card ul{margin:0;padding-left:18px;color:var(--ink-soft);}
-  .day-card li{margin-bottom:5px;font-size:14.5px;}
+  .day-card{margin-bottom:20px;}
+  .day-card h3{font-size:20px;margin-bottom:16px;}
+  .day-card ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:14px;}
+  .day-card li{display:flex;gap:14px;align-items:flex-start;font-size:14.5px;}
+  .activity-time{flex-shrink:0;width:88px;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);background:var(--gold-soft);border-radius:6px;padding:4px 8px;text-align:center;margin-top:1px;}
+  .activity-text{color:var(--ink-soft);line-height:1.6;padding-top:2px;}
+  .activity-text .cost{color:var(--accent);font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:500;}
+
+  .day-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;}
+  .day-tab{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.04em;color:var(--ink-soft);background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer;text-align:left;transition:all .15s ease;}
+  .day-tab:hover{border-color:var(--accent);color:var(--ink);}
+  .day-tab.active{background:var(--ink);color:var(--bg);border-color:var(--ink);}
+  .day-tab .tab-daynum{display:block;font-size:9px;opacity:.7;text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px;}
+  .day-panel{display:none;opacity:0;transform:translateY(4px);transition:opacity .25s ease, transform .25s ease;}
+  .day-panel.active{display:block;opacity:1;transform:translateY(0);}
+
+  .hero-banner{position:relative;border-radius:14px;overflow:hidden;margin-bottom:24px;min-height:180px;background:linear-gradient(135deg,var(--accent-soft),var(--gold-soft));display:flex;align-items:flex-end;}
+  .hero-banner img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+  .hero-banner .hero-overlay{position:relative;z-index:1;width:100%;background:linear-gradient(to top,rgba(0,0,0,.65),transparent 70%);padding:20px 24px;}
+  .hero-banner .hero-overlay h2{color:#fff;font-size:26px;margin:0;}
+  .hero-banner .hero-overlay .hero-sub{color:rgba(255,255,255,.85);font-size:13px;margin-top:4px;font-family:'IBM Plex Mono',monospace;letter-spacing:.04em;}
+  .hero-banner.no-image .hero-overlay{background:none;padding:24px;}
+  .hero-banner.no-image .hero-overlay h2{color:var(--ink);}
+  .hero-banner.no-image .hero-overlay .hero-sub{color:var(--ink-soft);}
+  .photo-strip{display:flex;gap:10px;overflow-x:auto;margin-bottom:24px;padding-bottom:4px;}
+  .photo-strip .photo-item{flex-shrink:0;width:140px;}
+  .photo-strip .photo-item img{width:140px;height:100px;object-fit:cover;border-radius:10px;border:1px solid var(--line);background:var(--accent-soft);}
+  .photo-strip .photo-item .photo-caption{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);margin-top:4px;line-height:1.3;}
+  .fun-fact{background:var(--gold-soft);border-radius:10px;padding:12px 16px;font-size:13px;color:var(--ink-soft);line-height:1.5;margin-bottom:20px;}
+  .fun-fact .fact-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin-right:6px;}
+  .stat-bar{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px;}
+  .stat-chip{flex:1;min-width:120px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px 16px;}
+  .stat-chip .stat-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:4px;}
+  .stat-chip .stat-value{font-family:'Fraunces',serif;font-size:19px;color:var(--ink);}
+  .stat-chip.warn .stat-value{color:var(--alert);}
+  .stat-chip.ok .stat-value{color:var(--accent);}
+
+  .day-weather{display:inline-flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-soft);background:var(--accent-soft);border-radius:8px;padding:6px 12px;margin-bottom:16px;}
+  .day-weather .temp-max{color:var(--ink);font-weight:500;}
+  .day-weather .rain{color:var(--gold);}
+
+  .day-card li.checked .activity-text{color:#9AA39D;text-decoration:line-through;}
+  .day-card li{cursor:pointer;}
+  .activity-check{flex-shrink:0;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--line);margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:11px;color:transparent;transition:all .15s ease;}
+  .day-card li.checked .activity-check{background:var(--accent);border-color:var(--accent);color:#fff;}
+
+  .toolbar-row{display:flex;justify-content:flex-end;gap:10px;margin-bottom:16px;}
+  .toolbar-row button{padding:8px 14px;font-size:11px;}
 
   .side .doc{padding:20px 20px 18px;}
   #map{height:220px;border-radius:10px;margin-top:4px;}
@@ -124,12 +189,24 @@
 
   <div class="topbar">
     <div class="brand">
-      <svg width="26" height="26" viewBox="0 0 22 22">
-        <circle cx="11" cy="11" r="9.5" fill="none" stroke="#2F6F5E" stroke-width="1.2"/>
-        <polygon points="11,3 12.84,9.16 19,11 12.84,12.84 11,19 9.16,12.84 3,11 9.16,9.16" fill="#B8862B"/>
-        <circle cx="11" cy="11" r="1.3" fill="#1B2B28"/>
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+        <defs>
+          <linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#2F6F5E"/>
+            <stop offset="1" stop-color="#1B2B28"/>
+          </linearGradient>
+        </defs>
+        <circle cx="18" cy="18" r="17" fill="url(#brandGrad)"/>
+        <path d="M8 25 C 10 15, 17 9, 27 10" stroke="#EFE7D8" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-dasharray="1 3.2" opacity="0.9"/>
+        <circle cx="8" cy="25" r="1.6" fill="#EFE7D8"/>
+        <path d="M27 5.2 L27 8.4 M23.8 6.8 L30.2 6.8" stroke="#B8862B" stroke-width="1.3" stroke-linecap="round"/>
+        <circle cx="27" cy="10.4" r="2.6" fill="#B8862B"/>
+        <path d="M27 10.4 L27 13.6" stroke="#1B2B28" stroke-width="1.1" stroke-linecap="round"/>
       </svg>
-      <span>Field Itinerary</span>
+      <div class="brand-text">
+        <span class="brand-kicker">Five agents</span>
+        <span class="brand-name">Field Itinerary</span>
+      </div>
     </div>
     <div class="who" id="who" style="display:none;">
       <span id="who-email"></span>
@@ -139,47 +216,54 @@
   <h1>Plan a trip with five agents</h1>
   <p class="tagline">A planner, a budget checker, a local-info scout, a transport scout and a writer plan your trip together — costs in ₹.</p>
 
-  <div class="doc" id="auth-card">
-    <div class="tabs">
-      <div class="tab active" data-tab="signin">Sign in</div>
-      <div class="tab" data-tab="signup">Sign up</div>
+  <div class="auth-wrap" id="auth-card">
+    <div class="auth-hero">
+      <span class="auth-badge">✧ Take a breath</span>
+      <h2>Your next trip is already halfway planned.</h2>
+      <p>Five agents quietly work out the route, the budget, the local tips and the way there — so all you have to decide is where.</p>
     </div>
+    <div class="auth-form-side">
+      <div class="tabs">
+        <div class="tab active" data-tab="signin">Sign in</div>
+        <div class="tab" data-tab="signup">Sign up</div>
+      </div>
 
-    <form class="auth-form show" id="signin-form">
-      <div class="auth-field">
-        <label>Email</label>
-        <input type="email" id="signin-email" required>
-      </div>
-      <div class="auth-field">
-        <label>Password</label>
-        <input type="password" id="signin-password" required>
-      </div>
-      <span class="error" id="signin-error"></span>
-      <button type="submit">Sign in</button>
-    </form>
+      <form class="auth-form show" id="signin-form">
+        <div class="auth-field">
+          <label>Email</label>
+          <input type="email" id="signin-email" required>
+        </div>
+        <div class="auth-field">
+          <label>Password</label>
+          <input type="password" id="signin-password" required>
+        </div>
+        <span class="error" id="signin-error"></span>
+        <button type="submit">Sign in</button>
+      </form>
 
-    <form class="auth-form" id="signup-form">
-      <div class="auth-field">
-        <label>Email</label>
-        <input type="email" id="signup-email" required>
-      </div>
-      <div class="auth-field">
-        <label>Password (min 8 characters)</label>
-        <input type="password" id="signup-password" required minlength="8">
-      </div>
-      <span class="error" id="signup-error"></span>
-      <button type="submit">Create account</button>
-    </form>
+      <form class="auth-form" id="signup-form">
+        <div class="auth-field">
+          <label>Email</label>
+          <input type="email" id="signup-email" required>
+        </div>
+        <div class="auth-field">
+          <label>Password (min 8 characters)</label>
+          <input type="password" id="signup-password" required minlength="8">
+        </div>
+        <span class="error" id="signup-error"></span>
+        <button type="submit">Create account</button>
+      </form>
 
-    <form class="auth-form" id="confirm-form">
-      <span class="hint">We emailed a confirmation code to your address.</span>
-      <div class="auth-field">
-        <label>Confirmation code</label>
-        <input type="text" id="confirm-code" required>
-      </div>
-      <span class="error" id="confirm-error"></span>
-      <button type="submit">Confirm account</button>
-    </form>
+      <form class="auth-form" id="confirm-form">
+        <span class="hint">We emailed a confirmation code to your address.</span>
+        <div class="auth-field">
+          <label>Confirmation code</label>
+          <input type="text" id="confirm-code" required>
+        </div>
+        <span class="error" id="confirm-error"></span>
+        <button type="submit">Confirm account</button>
+      </form>
+    </div>
   </div>
 
   <div id="app-section">
@@ -198,6 +282,14 @@
         <div class="field half">
           <label for="destination">Destination</label>
           <input id="destination" placeholder="Jaipur, Rajasthan" required>
+          <div class="dest-picks" id="dest-picks">
+            <button type="button" class="dest-pick" data-value="Goa">🏖 Goa</button>
+            <button type="button" class="dest-pick" data-value="Jaipur, Rajasthan">🏰 Jaipur</button>
+            <button type="button" class="dest-pick" data-value="Manali, Himachal Pradesh">🏔 Manali</button>
+            <button type="button" class="dest-pick" data-value="Kochi, Kerala">🌴 Kerala</button>
+            <button type="button" class="dest-pick" data-value="Rishikesh, Uttarakhand">🧘 Rishikesh</button>
+            <button type="button" class="dest-pick" id="surprise-btn">🎲 Surprise me</button>
+          </div>
         </div>
         <div class="field">
           <label for="start">Start date</label>
@@ -208,12 +300,28 @@
           <input id="end" type="date" required>
         </div>
         <div class="field">
-          <label for="budget">Budget (₹)</label>
+          <label for="travelers">Travelers</label>
+          <input id="travelers" type="number" min="1" max="20" value="1">
+        </div>
+        <div class="field">
+          <label for="budget">Budget for the group (₹)</label>
           <input id="budget" type="number" placeholder="15000">
         </div>
         <div class="field wide">
           <label for="interests">Interests (comma separated)</label>
           <input id="interests" placeholder="food, heritage, hiking">
+          <div class="interest-chips" id="interest-chips">
+            <button type="button" class="interest-chip" data-value="food">🍛 Food</button>
+            <button type="button" class="interest-chip" data-value="heritage">🏛 Heritage</button>
+            <button type="button" class="interest-chip" data-value="nature">🌿 Nature</button>
+            <button type="button" class="interest-chip" data-value="hiking">🥾 Hiking</button>
+            <button type="button" class="interest-chip" data-value="nightlife">🌃 Nightlife</button>
+            <button type="button" class="interest-chip" data-value="shopping">🛍 Shopping</button>
+            <button type="button" class="interest-chip" data-value="spirituality">🛕 Spirituality</button>
+            <button type="button" class="interest-chip" data-value="art & culture">🎨 Art &amp; culture</button>
+            <button type="button" class="interest-chip" data-value="beaches">🏖 Beaches</button>
+            <button type="button" class="interest-chip" data-value="wildlife">🦁 Wildlife</button>
+          </div>
         </div>
         <div class="submit-row">
           <span class="error" id="trip-error"></span>
@@ -285,7 +393,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/amazon-cognito-identity-js@6/dist/amazon-cognito-identity.min.js"></script>
 <script>
-const API_BASE = "https://ene87rzhs9.execute-api.us-east-1.amazonaws.com";
+const API_BASE = "/api";
 const USER_POOL_ID = "us-east-1_WcZWRSH3a";
 const CLIENT_ID = "5edhkdphi0j2q581497h04g3fg";
 
@@ -307,7 +415,7 @@ function showApp(email) {
 }
 
 function showAuth() {
-  document.getElementById("auth-card").style.display = "block";
+  document.getElementById("auth-card").style.display = "grid";
   document.getElementById("app-section").classList.remove("show");
   document.getElementById("who").style.display = "none";
 }
@@ -444,7 +552,7 @@ async function loadPastTrip(tripId) {
   const data = await res.json();
   if (data.status === "SUCCEEDED" && data.result) {
     document.getElementById("ledger").classList.remove("show");
-    renderResult(data.result);
+    renderResult(data.result, tripId);
     document.getElementById("results").scrollIntoView({ behavior: "smooth" });
   }
 }
@@ -474,6 +582,36 @@ function setLedgerState(step, status) {
   });
 }
 
+const todayIso = new Date().toISOString().slice(0, 10);
+document.getElementById("start").min = todayIso;
+document.getElementById("end").min = todayIso;
+
+document.querySelectorAll(".interest-chip").forEach(chip => {
+  chip.addEventListener("click", () => {
+    chip.classList.toggle("selected");
+    const selected = Array.from(document.querySelectorAll(".interest-chip.selected")).map(c => c.dataset.value);
+    document.getElementById("interests").value = selected.join(", ");
+  });
+});
+
+const surpriseDestinations = [
+  "Goa", "Jaipur, Rajasthan", "Manali, Himachal Pradesh", "Kochi, Kerala",
+  "Rishikesh, Uttarakhand", "Udaipur, Rajasthan", "Leh, Ladakh", "Pondicherry",
+  "Darjeeling, West Bengal", "Hampi, Karnataka", "Coorg, Karnataka", "Varanasi, Uttar Pradesh",
+];
+
+document.querySelectorAll(".dest-pick").forEach(btn => {
+  if (btn.id === "surprise-btn") return;
+  btn.addEventListener("click", () => {
+    document.getElementById("destination").value = btn.dataset.value;
+  });
+});
+
+document.getElementById("surprise-btn").addEventListener("click", () => {
+  const pick = surpriseDestinations[Math.floor(Math.random() * surpriseDestinations.length)];
+  document.getElementById("destination").value = pick;
+});
+
 document.getElementById("trip-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const errorEl = document.getElementById("trip-error");
@@ -484,11 +622,17 @@ document.getElementById("trip-form").addEventListener("submit", async (e) => {
   const startDate = document.getElementById("start").value;
   const endDate = document.getElementById("end").value;
   const budget = document.getElementById("budget").value;
+  const travelers = parseInt(document.getElementById("travelers").value, 10) || 1;
   const interests = document.getElementById("interests").value
     .split(",").map(s => s.trim()).filter(Boolean);
 
   if (endDate < startDate) {
     errorEl.textContent = "End date must be after the start date.";
+    return;
+  }
+  const todayStr = new Date().toISOString().slice(0, 10);
+  if (startDate < todayStr) {
+    errorEl.textContent = "Start date can't be in the past.";
     return;
   }
 
@@ -505,7 +649,7 @@ document.getElementById("trip-form").addEventListener("submit", async (e) => {
     const res = await fetch(`${API_BASE}/trip`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
-      body: JSON.stringify({ origin, destination, startDate, endDate, budget, interests }),
+      body: JSON.stringify({ origin, destination, startDate, endDate, budget, interests, travelers }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Could not start trip planning");
@@ -531,33 +675,240 @@ async function pollStatus(tripId) {
     if (data.status === "SUCCEEDED" && data.result) {
       clearInterval(pollTimer);
       submitBtn.disabled = false;
-      renderResult(data.result);
+      renderResult(data.result, tripId);
       loadHistory();
     } else if (data.status === "FAILED") {
       clearInterval(pollTimer);
       submitBtn.disabled = false;
-      errorEl.textContent = "One of the agents failed — check the Lambda logs for trip_orchestrator.";
+      errorEl.textContent = "One of the agents failed. Check the container logs (docker compose logs -f) for details.";
     }
   } catch (err) {
     // transient network error, next poll will retry
   }
 }
 
-function renderResult(itinerary) {
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function splitActivityLabel(text) {
+  const seps = [":", " – ", " — ", " - "];
+  for (const sep of seps) {
+    const idx = text.indexOf(sep);
+    if (idx > -1 && idx <= 30) {
+      let label = text.slice(0, idx).trim();
+      let rest = text.slice(idx + sep.length).trim();
+      // Handle clock-time labels like "9" from "9:00 AM: rest" by merging the next colon segment too.
+      if (/^\d{1,2}$/.test(label) && sep === ":") {
+        const idx2 = rest.indexOf(":");
+        if (idx2 > -1 && idx2 <= 15) {
+          label = `${label}:${rest.slice(0, idx2)}`.trim();
+          rest = rest.slice(idx2 + 1).trim();
+        }
+      }
+      if (label.length >= 2 && label.length <= 30 && !/^\d+$/.test(label)) {
+        return { label, rest };
+      }
+    }
+  }
+  return { label: "", rest: text };
+}
+
+function formatActivity(raw, idx) {
+  const text = String(raw);
+  const { label, rest } = splitActivityLabel(text);
+  const withCost = escapeHtml(rest).replace(/(₹\s?[\d,]+(?:\s?-\s?₹?\s?[\d,]+)?)/g, '<span class="cost">$1</span>');
+  return `<li data-activity-idx="${idx}"><span class="activity-check">✓</span>${label ? `<span class="activity-time">${escapeHtml(label)}</span>` : ""}<span class="activity-text">${withCost}</span></li>`;
+}
+
+function getChecklist(tripId) {
+  try { return JSON.parse(localStorage.getItem(`checklist:${tripId}`) || "{}"); }
+  catch { return {}; }
+}
+function saveChecklist(tripId, state) {
+  localStorage.setItem(`checklist:${tripId}`, JSON.stringify(state));
+}
+
+function weatherForDate(weather, dateStr) {
+  if (!weather || !weather.time) return null;
+  const i = weather.time.indexOf(dateStr);
+  if (i === -1) return null;
+  return {
+    max: weather.temperature_2m_max ? weather.temperature_2m_max[i] : null,
+    min: weather.temperature_2m_min ? weather.temperature_2m_min[i] : null,
+    rain: weather.precipitation_probability_max ? weather.precipitation_probability_max[i] : null,
+  };
+}
+
+function downloadItinerary(itinerary) {
+  const lines = [];
+  const route = itinerary.origin ? `${itinerary.origin} -> ${itinerary.destination || ""}` : (itinerary.destination || "");
+  lines.push(route, "=".repeat(route.length), "");
+  (itinerary.days || []).forEach((day, i) => {
+    lines.push(`Day ${i + 1} - ${day.date || ""} - ${day.title || ""}`);
+    (day.activities || []).forEach(a => lines.push(`  - ${a}`));
+    lines.push("");
+  });
+  if (itinerary.budget) {
+    lines.push(`Estimated total: ₹${Math.round(itinerary.budget.estimatedTotal || 0).toLocaleString("en-IN")} (${itinerary.budget.withinBudget ? "within budget" : "over budget"})`);
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${(itinerary.destination || "itinerary").replace(/\s+/g, "_")}.txt`;
+  a.click();
+}
+
+async function getWikiSummary(query) {
+  try {
+    const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function getDestinationImage(destination) {
+  if (!destination) return null;
+  const summary = await getWikiSummary(destination);
+  return summary?.thumbnail?.source || summary?.originalimage?.source || null;
+}
+
+async function buildPhotoStrip(attractions, destination) {
+  const names = (attractions || []).map(a => a.name).filter(Boolean).slice(0, 6);
+  if (!names.length) return [];
+  const results = await Promise.all(names.map(async name => {
+    const summary = await getWikiSummary(`${name}, ${destination}`) || await getWikiSummary(name);
+    const url = summary?.thumbnail?.source || summary?.originalimage?.source;
+    return url ? { name, url } : null;
+  }));
+  return results.filter(Boolean);
+}
+
+function renderResult(itinerary, tripId) {
   document.getElementById("results").classList.add("show");
 
   const daysEl = document.getElementById("days");
   const route = itinerary.origin ? `${itinerary.origin} → ${itinerary.destination || ""}` : (itinerary.destination || "");
-  daysEl.innerHTML = `<h2 style="margin-bottom:16px;">${route}</h2>`;
-  (itinerary.days || []).forEach(day => {
-    const card = document.createElement("div");
-    card.className = "doc day-card";
-    card.innerHTML = `
-      <div class="doc-label">${day.date || ""}</div>
-      <h3>${day.title || ""}</h3>
-      <ul>${(day.activities || []).map(a => `<li>${a}</li>`).join("")}</ul>
+  const days = itinerary.days || [];
+  const checklist = getChecklist(tripId);
+
+  const tripBudget = itinerary.budget || {};
+  const travelers = itinerary.travelers || 1;
+  const statBarHtml = `
+    <div class="stat-bar">
+      <div class="stat-chip"><div class="stat-label">Duration</div><div class="stat-value">${days.length} day${days.length === 1 ? "" : "s"}</div></div>
+      <div class="stat-chip"><div class="stat-label">Travelers</div><div class="stat-value">${travelers} ${travelers === 1 ? "person" : "people"}</div></div>
+      <div class="stat-chip ${tripBudget.withinBudget === false ? "warn" : tripBudget.withinBudget ? "ok" : ""}">
+        <div class="stat-label">Estimated cost</div>
+        <div class="stat-value">₹${Math.round(tripBudget.estimatedTotal || 0).toLocaleString("en-IN")}</div>
+      </div>
+      <div class="stat-chip ${tripBudget.withinBudget === false ? "warn" : tripBudget.withinBudget ? "ok" : ""}">
+        <div class="stat-label">Budget status</div>
+        <div class="stat-value">${tripBudget.withinBudget === false ? "Over budget" : tripBudget.withinBudget ? "Within budget" : "—"}</div>
+      </div>
+    </div>
+  `;
+
+  const toolbarHtml = `
+    <div class="toolbar-row">
+      <button type="button" class="ghost" id="export-btn">⭳ Export itinerary</button>
+    </div>
+  `;
+
+  const tabsHtml = days.map((day, i) => `
+    <button type="button" class="day-tab${i === 0 ? " active" : ""}" data-day-index="${i}">
+      <span class="tab-daynum">Day ${i + 1}</span>${day.date || ""}
+    </button>
+  `).join("");
+
+  const panelsHtml = days.map((day, i) => {
+    const w = weatherForDate(itinerary.weather, day.date);
+    const weatherHtml = w ? `
+      <div class="day-weather">
+        <span>☀</span>
+        <span class="temp-max">${w.max != null ? Math.round(w.max) + "°" : "–"}</span>
+        <span>/ ${w.min != null ? Math.round(w.min) + "°" : "–"}</span>
+        ${w.rain != null ? `<span class="rain">${Math.round(w.rain)}% rain</span>` : ""}
+      </div>
+    ` : "";
+    const activitiesHtml = (day.activities || []).map((a, ai) => formatActivity(a, ai)).join("");
+    return `
+      <div class="doc day-card day-panel${i === 0 ? " active" : ""}" data-day-index="${i}">
+        <div class="doc-label">${day.date || ""} · Day ${i + 1} of ${days.length}</div>
+        <h3>${day.title || ""}</h3>
+        ${weatherHtml}
+        <ul>${activitiesHtml}</ul>
+      </div>
     `;
-    daysEl.appendChild(card);
+  }).join("");
+
+  daysEl.innerHTML = `
+    <div class="hero-banner no-image" id="hero-banner">
+      <div class="hero-overlay">
+        <h2 style="font-family:'Fraunces',serif;">${route}</h2>
+        <div class="hero-sub">${days.length} day${days.length === 1 ? "" : "s"} · ${(itinerary.tips || []).length ? "planned by five agents" : ""}</div>
+      </div>
+    </div>
+    <div class="photo-strip" id="photo-strip"></div>
+    <div class="fun-fact" id="fun-fact" style="display:none;"></div>
+    ${statBarHtml}
+    ${toolbarHtml}
+    <div class="day-tabs">${tabsHtml}</div>
+    ${panelsHtml}
+  `;
+
+  const destinationForImage = itinerary.destination || "";
+  getWikiSummary(destinationForImage).then(summary => {
+    const banner = document.getElementById("hero-banner");
+    if (summary?.thumbnail?.source && banner) {
+      banner.classList.remove("no-image");
+      const img = document.createElement("img");
+      img.src = summary.thumbnail.source;
+      img.alt = destinationForImage;
+      banner.insertBefore(img, banner.firstChild);
+    }
+    const factEl = document.getElementById("fun-fact");
+    if (summary?.extract && factEl) {
+      const firstSentence = summary.extract.split(/(?<=[.!?])\s/)[0];
+      factEl.innerHTML = `<span class="fact-label">Did you know</span> ${escapeHtml(firstSentence)}`;
+      factEl.style.display = "block";
+    }
+  });
+
+  buildPhotoStrip(itinerary.attractions, destinationForImage).then(photos => {
+    const strip = document.getElementById("photo-strip");
+    if (!strip || !photos.length) return;
+    strip.innerHTML = photos.map(p => `
+      <div class="photo-item">
+        <img src="${p.url}" alt="${escapeHtml(p.name)}" loading="lazy">
+        <div class="photo-caption">${escapeHtml(p.name)}</div>
+      </div>
+    `).join("");
+  });
+
+  document.getElementById("export-btn").addEventListener("click", () => downloadItinerary(itinerary));
+
+  daysEl.querySelectorAll(".day-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      const idx = tab.dataset.dayIndex;
+      daysEl.querySelectorAll(".day-tab").forEach(t => t.classList.toggle("active", t.dataset.dayIndex === idx));
+      daysEl.querySelectorAll(".day-panel").forEach(p => p.classList.toggle("active", p.dataset.dayIndex === idx));
+    });
+  });
+
+  daysEl.querySelectorAll(".day-panel").forEach(panel => {
+    const dayIdx = panel.dataset.dayIndex;
+    panel.querySelectorAll("li[data-activity-idx]").forEach(li => {
+      const key = `${dayIdx}:${li.dataset.activityIdx}`;
+      if (checklist[key]) li.classList.add("checked");
+      li.addEventListener("click", () => {
+        li.classList.toggle("checked");
+        checklist[key] = li.classList.contains("checked");
+        if (tripId) saveChecklist(tripId, checklist);
+      });
+    });
   });
 
   const transportCard = document.getElementById("transport-card");
