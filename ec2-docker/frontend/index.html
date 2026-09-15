@@ -446,6 +446,24 @@ document.querySelectorAll(".tab").forEach(tab => {
   });
 });
 
+function doSignIn(email, password, errorEl) {
+  const user = new AmazonCognitoIdentity.CognitoUser({ Username: email, Pool: userPool });
+  const authDetails = new AmazonCognitoIdentity.AuthenticationDetails({
+    Username: email,
+    Password: password,
+  });
+  user.authenticateUser(authDetails, {
+    onSuccess: (session) => {
+      idToken = session.getIdToken().getJwtToken();
+      localStorage.setItem("idToken", idToken);
+      showApp(email);
+    },
+    onFailure: (err) => {
+      errorEl.textContent = err.message;
+    },
+  });
+}
+
 document.getElementById("signup-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const email = document.getElementById("signup-email").value.trim();
@@ -461,8 +479,13 @@ document.getElementById("signup-form").addEventListener("submit", (e) => {
       return;
     }
     pendingUser = result.user;
-    document.getElementById("signup-form").classList.remove("show");
-    document.getElementById("confirm-form").classList.add("show");
+    if (result.userConfirmed) {
+      // No email verification required - log the user straight in.
+      doSignIn(email, password, errorEl);
+    } else {
+      document.getElementById("signup-form").classList.remove("show");
+      document.getElementById("confirm-form").classList.add("show");
+    }
   });
 });
 
@@ -488,23 +511,7 @@ document.getElementById("signin-form").addEventListener("submit", (e) => {
   const password = document.getElementById("signin-password").value;
   const errorEl = document.getElementById("signin-error");
   errorEl.textContent = "";
-
-  const user = new AmazonCognitoIdentity.CognitoUser({ Username: email, Pool: userPool });
-  const authDetails = new AmazonCognitoIdentity.AuthenticationDetails({
-    Username: email,
-    Password: password,
-  });
-
-  user.authenticateUser(authDetails, {
-    onSuccess: (session) => {
-      idToken = session.getIdToken().getJwtToken();
-      localStorage.setItem("idToken", idToken);
-      showApp(email);
-    },
-    onFailure: (err) => {
-      errorEl.textContent = err.message;
-    },
-  });
+  doSignIn(email, password, errorEl);
 });
 
 document.getElementById("logout-btn").addEventListener("click", () => {
