@@ -253,16 +253,6 @@
         <span class="error" id="signup-error"></span>
         <button type="submit">Create account</button>
       </form>
-
-      <form class="auth-form" id="confirm-form">
-        <span class="hint">We emailed a confirmation code to your address.</span>
-        <div class="auth-field">
-          <label>Confirmation code</label>
-          <input type="text" id="confirm-code" required>
-        </div>
-        <span class="error" id="confirm-error"></span>
-        <button type="submit">Confirm account</button>
-      </form>
     </div>
   </div>
 
@@ -391,19 +381,10 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.12/dist/amazon-cognito-identity.min.js"></script>
 <script>
 const API_BASE = "/api";
-const USER_POOL_ID = "us-east-1_WcZWRSH3a";
-const CLIENT_ID = "5edhkdphi0j2q581497h04g3fg";
-
-const userPool = new AmazonCognitoIdentity.CognitoUserPool({
-  UserPoolId: USER_POOL_ID,
-  ClientId: CLIENT_ID,
-});
 
 let idToken = localStorage.getItem("idToken");
-let pendingUser = null;
 let pollTimer = null;
 
 function showApp(email) {
@@ -442,27 +423,28 @@ document.querySelectorAll(".tab").forEach(tab => {
     const target = tab.dataset.tab;
     document.getElementById("signin-form").classList.toggle("show", target === "signin");
     document.getElementById("signup-form").classList.toggle("show", target === "signup");
-    document.getElementById("confirm-form").classList.remove("show");
   });
 });
 
-function doSignIn(email, password, errorEl) {
-  const user = new AmazonCognitoIdentity.CognitoUser({ Username: email, Pool: userPool });
-  const authDetails = new AmazonCognitoIdentity.AuthenticationDetails({
-    Username: email,
-    Password: password,
-  });
-  user.authenticateUser(authDetails, {
-    onSuccess: (session) => {
-      idToken = session.getIdToken().getJwtToken();
-      localStorage.setItem("idToken", idToken);
-      showApp(email);
-    },
-    onFailure: (err) => {
-      console.error("Cognito authenticateUser failure:", err);
-      errorEl.textContent = (err && (err.message || err.code || err.__type)) || JSON.stringify(err) || "Unknown sign-in error - check console.";
-    },
-  });
+async function doAuthRequest(path, email, password, errorEl) {
+  try {
+    const res = await fetch(`${API_BASE}/auth/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errorEl.textContent = data.detail || "Something went wrong.";
+      return;
+    }
+    idToken = data.token;
+    localStorage.setItem("idToken", idToken);
+    showApp(data.email);
+  } catch (err) {
+    console.error(`${path} failure:`, err);
+    errorEl.textContent = "Couldn't reach the server. Please try again.";
+  }
 }
 
 document.getElementById("signup-form").addEventListener("submit", (e) => {
@@ -471,40 +453,7 @@ document.getElementById("signup-form").addEventListener("submit", (e) => {
   const password = document.getElementById("signup-password").value;
   const errorEl = document.getElementById("signup-error");
   errorEl.textContent = "";
-
-  userPool.signUp(email, password, [
-    new AmazonCognitoIdentity.CognitoUserAttribute({ Name: "email", Value: email }),
-  ], null, (err, result) => {
-    if (err) {
-      console.error("Cognito signUp failure:", err);
-      errorEl.textContent = (err && (err.message || err.code || err.__type)) || JSON.stringify(err) || "Unknown sign-up error - check console.";
-      return;
-    }
-    pendingUser = result.user;
-    if (result.userConfirmed) {
-      // No email verification required - log the user straight in.
-      doSignIn(email, password, errorEl);
-    } else {
-      document.getElementById("signup-form").classList.remove("show");
-      document.getElementById("confirm-form").classList.add("show");
-    }
-  });
-});
-
-document.getElementById("confirm-form").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const code = document.getElementById("confirm-code").value.trim();
-  const errorEl = document.getElementById("confirm-error");
-  errorEl.textContent = "";
-
-  pendingUser.confirmRegistration(code, true, (err) => {
-    if (err) {
-      errorEl.textContent = err.message;
-      return;
-    }
-    document.getElementById("confirm-form").classList.remove("show");
-    document.querySelector('.tab[data-tab="signin"]').click();
-  });
+  doAuthRequest("signup", email, password, errorEl);
 });
 
 document.getElementById("signin-form").addEventListener("submit", (e) => {
@@ -513,7 +462,7 @@ document.getElementById("signin-form").addEventListener("submit", (e) => {
   const password = document.getElementById("signin-password").value;
   const errorEl = document.getElementById("signin-error");
   errorEl.textContent = "";
-  doSignIn(email, password, errorEl);
+  doAuthRequest("signin", email, password, errorEl);
 });
 
 document.getElementById("logout-btn").addEventListener("click", () => {
@@ -590,13 +539,6 @@ function setLedgerState(step, status) {
     }
   });
 }
-
-window.addEventListener("unhandledrejection", (e) => {
-  console.error("Unhandled promise rejection:", e.reason);
-});
-window.addEventListener("error", (e) => {
-  console.error("Uncaught error:", e.error || e.message);
-});
 
 const todayIso = new Date().toISOString().slice(0, 10);
 document.getElementById("start").min = todayIso;
