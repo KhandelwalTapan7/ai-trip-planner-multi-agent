@@ -1,26 +1,38 @@
 import os
 import time
-import requests
-from jose import jwt
+
+import bcrypt
+import jwt
 from fastapi import Header, HTTPException
 
-USER_POOL_ID = os.environ["USER_POOL_ID"]
-CLIENT_ID = os.environ["CLIENT_ID"]
-REGION = os.environ["AWS_REGION"]
-
-ISSUER = f"https://cognito-idp.{REGION}.amazonaws.com/{USER_POOL_ID}"
-JWKS_URL = f"{ISSUER}/.well-known/jwks.json"
-
-_jwks_cache = {"keys": None, "fetched_at": 0}
+# Change this in production - a long random string. Falls back to a default
+# only for convenience in local/dev use; set JWT_SECRET in your environment
+# for anything you actually care about.
+JWT_SECRET = os.environ.get("JWT_SECRET", "dev-only-change-me-please")
+JWT_ALGORITHM = "HS256"
+TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7  # 7 days
 
 
-def get_jwks():
-    if not _jwks_cache["keys"] or time.time() - _jwks_cache["fetched_at"] > 3600:
-        resp = requests.get(JWKS_URL, timeout=10)
-        resp.raise_for_status()
-        _jwks_cache["keys"] = resp.json()["keys"]
-        _jwks_cache["fetched_at"] = time.time()
-    return _jwks_cache["keys"]
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def create_token(user_id: str, email: str) -> str:
+    now = int(time.time())
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "iat": now,
+        "exp": now + TOKEN_TTL_SECONDS,
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 def get_current_user(authorization: str = Header(...)) -> str:
@@ -29,9 +41,7 @@ def get_current_user(authorization: str = Header(...)) -> str:
     token = authorization.removeprefix("Bearer ")
 
     try:
-        header = jwt.get_unverified_header(token)
-        key = next(k for k in get_jwks() if k["kid"] == header["kid"])
-        claims = jwt.decode(token, key, algorithms=["RS256"], audience=CLIENT_ID, issuer=ISSUER)
+        claims = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
