@@ -30,6 +30,17 @@ def get_conn():
 def init_db():
     with get_conn() as conn:
         with conn.cursor() as cur:
+            cur.execute('CREATE EXTENSION IF NOT EXISTS pgcrypto;')
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+                """
+            )
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS trips (
@@ -50,6 +61,23 @@ def init_db():
                     ON trips (user_id, created_at DESC);
                 """
             )
+
+
+def create_user(email, password_hash):
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "INSERT INTO users (email, password_hash) VALUES (%s, %s) RETURNING user_id, email",
+                (email, password_hash),
+            )
+            return cur.fetchone()
+
+
+def get_user_by_email(email):
+    with get_conn() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+            return cur.fetchone()
 
 
 def create_trip(trip_id, user_id, origin, destination, start_date, end_date, travelers):
