@@ -1,7 +1,6 @@
 fastapi
 uvicorn[standard]
-boto3
-requests
-langgraph
-python-jose[cryptography]
 psycopg2-binary
+requests
+PyJWT
+bcrypt
