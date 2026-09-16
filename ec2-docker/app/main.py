@@ -1,5 +1,4 @@
 import json
-import os
 import socket
 import threading
 import uuid
@@ -12,12 +11,11 @@ from pydantic import BaseModel
 
 import db
 from auth import get_current_user, hash_password, verify_password, create_token
+from graph import build_graph
 
 app = FastAPI()
 
 db.init_db()
-
-N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", "http://n8n:5678/webhook/trip")
 
 
 def get_instance_id():
@@ -90,10 +88,10 @@ class TripRequest(BaseModel):
 
 def run_trip(payload, trip_id):
     try:
-        resp = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=10)
-        resp.raise_for_status()
+        graph = build_graph()
+        graph.invoke(payload)
     except Exception as exc:
-        db.mark_failed(trip_id, f"Failed to hand off to n8n: {exc}")
+        db.mark_failed(trip_id, str(exc))
 
 
 @app.post("/api/trip")
