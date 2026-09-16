@@ -459,7 +459,8 @@ function doSignIn(email, password, errorEl) {
       showApp(email);
     },
     onFailure: (err) => {
-      errorEl.textContent = err.message;
+      console.error("Cognito authenticateUser failure:", err);
+      errorEl.textContent = (err && (err.message || err.code || err.__type)) || JSON.stringify(err) || "Unknown sign-in error - check console.";
     },
   });
 }
@@ -475,7 +476,8 @@ document.getElementById("signup-form").addEventListener("submit", (e) => {
     new AmazonCognitoIdentity.CognitoUserAttribute({ Name: "email", Value: email }),
   ], null, (err, result) => {
     if (err) {
-      errorEl.textContent = err.message;
+      console.error("Cognito signUp failure:", err);
+      errorEl.textContent = (err && (err.message || err.code || err.__type)) || JSON.stringify(err) || "Unknown sign-up error - check console.";
       return;
     }
     pendingUser = result.user;
@@ -588,6 +590,13 @@ function setLedgerState(step, status) {
     }
   });
 }
+
+window.addEventListener("unhandledrejection", (e) => {
+  console.error("Unhandled promise rejection:", e.reason);
+});
+window.addEventListener("error", (e) => {
+  console.error("Uncaught error:", e.error || e.message);
+});
 
 const todayIso = new Date().toISOString().slice(0, 10);
 document.getElementById("start").min = todayIso;
