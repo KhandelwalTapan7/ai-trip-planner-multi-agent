@@ -1,4 +1,5 @@
 import json
+import os
 import socket
 import threading
 import uuid
@@ -10,12 +11,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import db
-from auth import get_current_user
-from graph import build_graph
+from auth import get_current_user, hash_password, verify_password, create_token
 
 app = FastAPI()
 
 db.init_db()
+
+N8N_WEBHOOK_URL = os.environ.get("N8N_WEBHOOK_URL", "http://n8n:5678/webhook/trip")
 
 
 def get_instance_id():
@@ -39,6 +41,43 @@ def health():
     return {"status": "ok", "instance": get_instance_id()}
 
 
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+
+
+class SigninRequest(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/api/auth/signup")
+def signup(body: SignupRequest):
+    email = body.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email is required")
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    if db.get_user_by_email(email):
+        raise HTTPException(status_code=400, detail="An account with this email already exists")
+
+    user = db.create_user(email, hash_password(body.password))
+    token = create_token(user["user_id"], user["email"])
+    return {"token": token, "email": user["email"]}
+
+
+@app.post("/api/auth/signin")
+def signin(body: SigninRequest):
+    email = body.email.strip().lower()
+    user = db.get_user_by_email(email)
+    if not user or not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+
+    token = create_token(user["user_id"], user["email"])
+    return {"token": token, "email": user["email"]}
+
+
 class TripRequest(BaseModel):
     origin: str
     destination: str
@@ -51,10 +90,10 @@ class TripRequest(BaseModel):
 
 def run_trip(payload, trip_id):
     try:
-        graph = build_graph()
-        graph.invoke(payload)
+        resp = requests.post(N8N_WEBHOOK_URL, json=payload, timeout=10)
+        resp.raise_for_status()
     except Exception as exc:
-        db.mark_failed(trip_id, str(exc))
+        db.mark_failed(trip_id, f"Failed to hand off to n8n: {exc}")
 
 
 @app.post("/api/trip")
