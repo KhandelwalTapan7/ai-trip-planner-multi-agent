@@ -16,24 +16,40 @@ services:
       timeout: 5s
       retries: 10
 
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - N8N_SECURE_COOKIE=false
+    volumes:
+      - trip_planner_n8n_data:/home/node/.n8n
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   trip-planner:
     build: .
     ports:
       - "80:80"
     environment:
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - USER_POOL_ID=${USER_POOL_ID}
-      - CLIENT_ID=${CLIENT_ID}
-      - AWS_REGION=us-east-1
+      - JWT_SECRET=${JWT_SECRET}
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
       - POSTGRES_DB=trip_planner
       - POSTGRES_USER=trip_planner
       - POSTGRES_PASSWORD=trip_planner
+      - N8N_WEBHOOK_URL=http://n8n:5678/webhook/trip
     depends_on:
       db:
         condition: service_healthy
+      n8n:
+        condition: service_started
     restart: unless-stopped
 
 volumes:
   trip_planner_pgdata:
+  trip_planner_n8n_data:
